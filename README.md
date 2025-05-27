@@ -43,3 +43,6 @@ requirements.txt            # Python dependencies
 
 Developed by Omer –  
 VP Projects @ Shachar Complexes LTD | Builder of applied AI for finance, productivity & business ops.
+
+![SmartBeta AI Banner](https://github.com/YOUR-USERNAME/smartbeta-ai/blob/main/banner.png?raw=true)
+
