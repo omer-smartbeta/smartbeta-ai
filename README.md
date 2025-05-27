@@ -25,7 +25,7 @@ It dynamically analyzes markets (S&P 500 and TA-125), ranks stocks based on smar
 
 ## 🚀 Try it Live
 
-👉 [Click here to launch the live dashboard](https://smartbeta-ai-ferwkebn5touhgb7bwsfs3.streamlit.app/)
+👉 [Click here to launch the live dashboard](https://github.com/omer-smartbeta/smartbeta-ai/blob/main/banner.png)
 
 ---
 
