@@ -17,6 +17,9 @@ import os
 
 st.set_page_config(page_title="Smart-Beta AI Portfolio", layout="wide")
 
+# ⬇️ הוספת באנר גרפי בראש הדשבורד
+st.image("banner.png", use_column_width=True)
+
 # --- תרגום דו-לשוני ---
 translations = {
     'he': {
