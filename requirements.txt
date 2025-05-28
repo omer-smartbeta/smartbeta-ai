@@ -9,4 +9,3 @@ reportlab
 lxml
 scikit-learn
 xgboost
-lightgbm
