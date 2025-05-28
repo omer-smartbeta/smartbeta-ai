@@ -1,4 +1,4 @@
-# Smart-Beta AI Portfolio App - גרסה מורחבת עם מודול חיזוי XGBoost
+# Smart-Beta AI Portfolio App - כולל מודול חיזוי חכם עם XGBoost
 
 import streamlit as st
 import pandas as pd
@@ -12,11 +12,11 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
-from xgboost import XGBClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
 import tempfile
 import os
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+import xgboost as xgb
 
 st.set_page_config(page_title="Smart-Beta AI Portfolio", layout="wide")
 
@@ -33,7 +33,7 @@ translations = {
         'end_date': 'תאריך סיום:',
         'num_stocks': 'כמה מניות לבחור?',
         'run_model': 'הפעל מודל AI',
-        'build_now': 'בנה לי תיק עכשיו',
+        'run_predictive': 'הפעל מודל חיזוי חכם',
         'loading': 'מריץ את המודל...',
         'done': 'המודל סיים לרוץ!',
         'recommended': 'תיק מומלץ',
@@ -56,7 +56,7 @@ translations = {
         'end_date': 'End Date:',
         'num_stocks': 'How many stocks to pick?',
         'run_model': 'Run AI Model',
-        'build_now': 'Build Portfolio Now',
+        'run_predictive': 'Run Predictive Model',
         'loading': 'Running the model...',
         'done': 'Model completed!',
         'recommended': 'Recommended Portfolio',
@@ -102,17 +102,6 @@ def get_ticker_data(symbol):
     except:
         return pd.DataFrame()
 
-def validate_symbols(symbols):
-    valid = []
-    for s in symbols:
-        try:
-            data = get_ticker_data(s)
-            if not data.empty:
-                valid.append(s)
-        except:
-            continue
-    return valid
-
 def fetch_factors(symbols, df_meta):
     data = []
     for symbol in symbols:
@@ -136,38 +125,26 @@ def fetch_factors(symbols, df_meta):
             continue
     return pd.DataFrame(data)
 
-def get_sentiment_score(name):
-    pos = ["עלייה", "חיובי", "המלצה"]
-    neg = ["ירידה", "הפסד", "שלילי"]
-    try:
-        txt = requests.get(f"https://news.google.com/rss/search?q={name}").text
-        return sum(txt.count(k) for k in pos) - sum(txt.count(n) for n in neg)
-    except:
-        return 0
-
-def run_prediction_model(df):
-    df['Target'] = (df['Score'] > df['Score'].median()).astype(int)
-    X = df[['Return', 'Volatility', 'Volume', 'Sentiment']]
-    y = df['Target']
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-    model = XGBClassifier(use_label_encoder=False, eval_metric='logloss')
+def run_predictive_model(df):
+    st.subheader("📈 תוצאה ממודל חיזוי XGBoost")
+    df = df.copy()
+    df["LogVolume"] = np.log(df["Volume"] + 1)
+    df = df.dropna()
+    X = df[["Return", "Volatility", "LogVolume"]]
+    y = (df["Return"] > 0.1).astype(int)  # יעד לדוגמה: תשואה חיובית מעל 10%
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+    model = xgb.XGBClassifier(eval_metric="logloss")
     model.fit(X_train, y_train)
-    df['Prediction'] = model.predict(X)
-    df_rec = df[df['Prediction'] == 1].sort_values("Score", ascending=False).head(top_n)
-    return df_rec
+    df["Prediction"] = model.predict(X_scaled)
+    df["Signal"] = np.where(df["Prediction"] == 1, "Buy", "Hold")
+    st.dataframe(df[["Ticker", "Return", "Volatility", "Volume", "Prediction", "Signal"]], use_container_width=True)
 
-# --- כפתור המלץ לי תיק עכשיו ---
-if st.button(T['build_now']):
-    st.subheader("התיק האוטומטי שלך")
-    df_meta = load_ta125_static() if market == "ת\"א 125" else load_sp500_online()
-    symbols = validate_symbols(df_meta["Symbol"].tolist())
-    df = fetch_factors(symbols, df_meta)
-    df["Sentiment"] = df["Name"].apply(get_sentiment_score)
-    df["Score"] = df[["Return", "Volatility", "Volume", "Sentiment"]].apply(
-        lambda row: 0.4 * row["Return"] - 0.3 * row["Volatility"] + 0.2 * np.log(row["Volume"] + 1) + 0.1 * row["Sentiment"], axis=1)
-    df_top = run_prediction_model(df)
-    df_top["Weight"] = round(1 / top_n, 3)
-    st.dataframe(df_top)
-
-st.markdown("---")
-st.caption(T['footer'])
+if st.button(T['run_predictive']):
+    with st.spinner("מריץ חיזוי חכם..."):
+        df_meta = load_ta125_static() if market == "ת\"א 125" else load_sp500_online()
+        symbols = df_meta["Symbol"].tolist()[:top_n * 2]
+        df = fetch_factors(symbols, df_meta)
+        if not df.empty:
+            run_predictive_model(df)
