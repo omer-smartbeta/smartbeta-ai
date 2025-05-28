@@ -126,7 +126,7 @@ def fetch_factors(symbols, df_meta):
     return pd.DataFrame(data)
 
 def run_predictive_model(df):
-    st.subheader("📈 תוצאה ממודל חיזוי XGBoost")
+    st.subheader("\ud83d\udcc8 תוצאה ממודל חיזוי XGBoost")
     df = df.copy()
     df["LogVolume"] = np.log(df["Volume"] + 1)
     df = df.dropna()
