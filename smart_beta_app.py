@@ -96,17 +96,18 @@ def load_sp500_online(limit=100):
     return df.head(limit)
 
 @st.cache_data(show_spinner=False)
-def get_ticker_data(symbol):
+def get_ticker_data_cached(symbol):
     try:
         return yf.Ticker(symbol).history(period="6mo")
     except:
         return pd.DataFrame()
 
+
 def fetch_factors(symbols, df_meta):
     data = []
     for symbol in symbols:
         try:
-            hist = get_ticker_data(symbol)
+           hist = get_ticker_data_cached(symbol)
             if hist.empty: continue
             returns = (hist["Close"].iloc[-1] / hist["Close"].iloc[0]) - 1
             vol = hist["Close"].pct_change().std() * np.sqrt(252)
@@ -144,7 +145,7 @@ def run_predictive_model(df):
 if st.button(T['run_predictive']):
     with st.spinner("מריץ חיזוי חכם..."):
         df_meta = load_ta125_static() if market == "ת\"א 125" else load_sp500_online()
-        symbols = df_meta["Symbol"].tolist()[:top_n * 2]
+        symbols = df_meta["Symbol"].tolist()[:30]
         df = fetch_factors(symbols, df_meta)
         if not df.empty:
             run_predictive_model(df)
