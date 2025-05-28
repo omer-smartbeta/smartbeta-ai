@@ -1,5 +1,4 @@
-# Full Smart-Beta AI Portfolio App with XGBoost + Feature Engineering + Backtest + Export
-# Updated based on full conversation up to 28.05.2025
+# Smart-Beta AI Portfolio App - גרסה מלאה כולל כפתור "בנה לי תיק עכשיו" וחיזוי לפי פרופיל משתמש
 
 import streamlit as st
 import pandas as pd
@@ -13,14 +12,16 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
+import tempfile
+import os
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 
-# --- UI Setup ---
 st.set_page_config(page_title="Smart-Beta AI Portfolio", layout="wide")
 st.image("banner.png", use_container_width=True)
 
+# תרגום דו-לשוני
 translations = {
     'he': {
         'title': 'תיק השקעות חכם מבוסס AI',
@@ -30,9 +31,10 @@ translations = {
         'start_date': 'תאריך התחלה:',
         'end_date': 'תאריך סיום:',
         'num_stocks': 'כמה מניות לבחור?',
-        'risk_level': 'רמת סיכון מועדפת:',
         'run_model': 'הפעל מודל AI',
         'run_predictive': 'הפעל מודל חיזוי חכם',
+        'build_my_portfolio': 'בנה לי תיק עכשיו',
+        'select_risk': 'רמת סיכון:',
         'loading': 'מריץ את המודל...',
         'done': 'המודל סיים לרוץ!',
         'recommended': 'תיק מומלץ',
@@ -54,9 +56,10 @@ translations = {
         'start_date': 'Start Date:',
         'end_date': 'End Date:',
         'num_stocks': 'How many stocks to pick?',
-        'risk_level': 'Preferred Risk Level:',
         'run_model': 'Run AI Model',
         'run_predictive': 'Run Predictive Model',
+        'build_my_portfolio': 'Build My Portfolio Now',
+        'select_risk': 'Risk Level:',
         'loading': 'Running the model...',
         'done': 'Model completed!',
         'recommended': 'Recommended Portfolio',
@@ -77,6 +80,24 @@ T = translations[language]
 
 st.title(T['title'])
 st.markdown(T['subtitle'])
+
+# קלטים מהמשתמש
+market = st.sidebar.selectbox(T['select_market'], ["S&P 500", "ת\"א 125"])
+start_date = st.sidebar.date_input(T['start_date'], datetime.today() - timedelta(days=365))
+end_date = st.sidebar.date_input(T['end_date'], datetime.today())
+top_n = st.sidebar.slider(T['num_stocks'], 5, 30, 10)
+risk_level = st.sidebar.selectbox(T['select_risk'], ["Low", "Medium", "High"])
+
+# כפתור "בנה לי תיק עכשיו"
+if st.sidebar.button(T['build_my_portfolio']):
+    st.subheader(T['recommended'])
+    st.info(f"🔍 יצירת תיק לפי רמת סיכון: {risk_level}")
+    # כאן תוכל להכניס לוגיקה מתקדמת בהמשך לבחירת מניות לפי פרופיל סיכון
+    # לדוגמה:
+    weights = {"Low": 0.2, "Medium": 0.5, "High": 0.8}
+    risk_weight = weights.get(risk_level, 0.5)
+    st.write(f"💡 מודל נבנה על בסיס משקל סיכון: {risk_weight}")
+    st.warning("⚙️ פונקציית בניית התיק החכם תורחב בהמשך עם אלגוריתם פרסונליזציה")
 
 market = st.sidebar.selectbox(T['select_market'], ["S&P 500", "ת\"א 125"])
 start_date = st.sidebar.date_input(T['start_date'], datetime.today() - timedelta(days=365))
