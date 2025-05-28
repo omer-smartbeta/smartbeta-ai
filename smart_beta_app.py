@@ -1,30 +1,39 @@
-# ✅ Smart-Beta AI Full App (עם חיזוק, פרופיל אישי ומקורות Live) - 2025-05-28
+# Smart-Beta AI Portfolio App - גרסה מורחבת עם מודול חיזוי XGBoost
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import yfinance as yf
 import requests
-import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from io import BytesIO
+import matplotlib.pyplot as plt
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.platypus import Table, TableStyle
+from reportlab.lib import colors
+from xgboost import XGBClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+import tempfile
 import os
-import json
-import random
 
-st.set_page_config(page_title="Smart-Beta AI", layout="wide")
+st.set_page_config(page_title="Smart-Beta AI Portfolio", layout="wide")
+
+st.image("banner.png", use_container_width=True)
 
 # --- תרגום דו-לשוני ---
 translations = {
     'he': {
         'title': 'תיק השקעות חכם מבוסס AI',
-        'subtitle': 'בחר שוק, סקטור, פרופיל אישי והרץ מודל AI',
+        'subtitle': 'בחר שוק, סקטור ופרמטרים נוספים להרצת מודל תיק מניות חכם',
         'select_market': 'בחר שוק:',
         'select_sector': 'בחר סקטור (אופציונלי):',
         'start_date': 'תאריך התחלה:',
         'end_date': 'תאריך סיום:',
         'num_stocks': 'כמה מניות לבחור?',
         'run_model': 'הפעל מודל AI',
+        'build_now': 'בנה לי תיק עכשיו',
         'loading': 'מריץ את המודל...',
         'done': 'המודל סיים לרוץ!',
         'recommended': 'תיק מומלץ',
@@ -34,19 +43,20 @@ translations = {
         'returns_hist': 'התפלגות תשואות',
         'signals': 'איתותים',
         'backtest': 'השוואה מול מדד ייחוס',
-        'risk_level': 'רמת סיכון:',
-        'preferred_sectors': 'סקטורים מועדפים (רב-בחירה):',
-        'recommend_now': 'בנה לי תיק עכשיו'
+        'export_excel': 'הורד Excel',
+        'export_pdf': 'הורד PDF',
+        'footer': 'דשבורד תיק השקעות חכם מבוסס AI - גרסה מלאה'
     },
     'en': {
         'title': 'AI-Powered Smart-Beta Portfolio',
-        'subtitle': 'Choose market, sector, personal profile and run the AI model',
+        'subtitle': 'Choose market, sector and filters to run the AI-based portfolio model',
         'select_market': 'Select Market:',
         'select_sector': 'Filter by Sector (optional):',
         'start_date': 'Start Date:',
         'end_date': 'End Date:',
         'num_stocks': 'How many stocks to pick?',
         'run_model': 'Run AI Model',
+        'build_now': 'Build Portfolio Now',
         'loading': 'Running the model...',
         'done': 'Model completed!',
         'recommended': 'Recommended Portfolio',
@@ -56,9 +66,9 @@ translations = {
         'returns_hist': 'Returns Histogram',
         'signals': 'Signals',
         'backtest': 'Backtest vs Benchmark',
-        'risk_level': 'Risk Level:',
-        'preferred_sectors': 'Preferred Sectors (multi-select):',
-        'recommend_now': 'Build My Portfolio'
+        'export_excel': 'Download Excel',
+        'export_pdf': 'Download PDF',
+        'footer': 'Smart-Beta AI Portfolio Dashboard - Full Version'
     }
 }
 
@@ -68,28 +78,22 @@ T = translations[language]
 st.title(T['title'])
 st.markdown(T['subtitle'])
 
-# --- פרופיל משתמש ---
-risk_level = st.sidebar.select_slider(T['risk_level'], options=["Low", "Medium", "High"])
-preferred_sectors = st.sidebar.multiselect(T['preferred_sectors'], ["Technology", "Health Care", "Financials", "Energy", "Industrials"])
-
-# --- שוק, תאריכים ומספר מניות ---
 market = st.sidebar.selectbox(T['select_market'], ["S&P 500", "ת\"א 125"])
 start_date = st.sidebar.date_input(T['start_date'], datetime.today() - timedelta(days=365))
 end_date = st.sidebar.date_input(T['end_date'], datetime.today())
 top_n = st.sidebar.slider(T['num_stocks'], 5, 30, 10)
 
-# --- פונקציות עזר ---
 @st.cache_data
-def load_sp500():
+def load_ta125_static():
+    return pd.read_csv("TA125_valid.csv")
+
+@st.cache_data
+def load_sp500_online(limit=100):
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     html = requests.get(url).text
     df = pd.read_html(html)[0][["Symbol", "Security", "GICS Sector"]]
     df.columns = ["Symbol", "Name", "Sector"]
-    return df
-
-@st.cache_data
-def load_ta125():
-    return pd.read_csv("TA125_valid.csv")
+    return df.head(limit)
 
 @st.cache_data(show_spinner=False)
 def get_ticker_data(symbol):
@@ -97,6 +101,40 @@ def get_ticker_data(symbol):
         return yf.Ticker(symbol).history(period="6mo")
     except:
         return pd.DataFrame()
+
+def validate_symbols(symbols):
+    valid = []
+    for s in symbols:
+        try:
+            data = get_ticker_data(s)
+            if not data.empty:
+                valid.append(s)
+        except:
+            continue
+    return valid
+
+def fetch_factors(symbols, df_meta):
+    data = []
+    for symbol in symbols:
+        try:
+            hist = get_ticker_data(symbol)
+            if hist.empty: continue
+            returns = (hist["Close"].iloc[-1] / hist["Close"].iloc[0]) - 1
+            vol = hist["Close"].pct_change().std() * np.sqrt(252)
+            volume = hist["Volume"].mean()
+            name = yf.Ticker(symbol).info.get("shortName", symbol)
+            sector = df_meta[df_meta["Symbol"] == symbol]["Sector"].values[0]
+            data.append({
+                "Ticker": symbol,
+                "Name": name,
+                "Return": round(returns, 3),
+                "Volatility": round(vol, 3),
+                "Volume": int(volume),
+                "Sector": sector
+            })
+        except:
+            continue
+    return pd.DataFrame(data)
 
 def get_sentiment_score(name):
     pos = ["עלייה", "חיובי", "המלצה"]
@@ -107,48 +145,29 @@ def get_sentiment_score(name):
     except:
         return 0
 
-def calculate_score(row):
-    base = 0.4 * row["Return"] - 0.3 * row["Volatility"] + 0.2 * np.log(row["Volume"] + 1) + 0.1 * row["Sentiment"]
-    if risk_level == "Low": base -= 0.2 * row["Volatility"]
-    if risk_level == "High": base += 0.1 * row["Return"]
-    return base
+def run_prediction_model(df):
+    df['Target'] = (df['Score'] > df['Score'].median()).astype(int)
+    X = df[['Return', 'Volatility', 'Volume', 'Sentiment']]
+    y = df['Target']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+    model = XGBClassifier(use_label_encoder=False, eval_metric='logloss')
+    model.fit(X_train, y_train)
+    df['Prediction'] = model.predict(X)
+    df_rec = df[df['Prediction'] == 1].sort_values("Score", ascending=False).head(top_n)
+    return df_rec
 
-# --- לחצן הפעלת המודל ---
-if st.button(T['recommend_now']):
-    with st.spinner(T['loading']):
-        df_meta = load_sp500() if market == "S&P 500" else load_ta125()
-        if preferred_sectors:
-            df_meta = df_meta[df_meta["Sector"].isin(preferred_sectors)]
-        stocks = df_meta["Symbol"].tolist()
-        data = []
-        for s in stocks:
-            hist = get_ticker_data(s)
-            if hist.empty or len(hist) < 20: continue
-            r = (hist["Close"].iloc[-1] / hist["Close"].iloc[0]) - 1
-            v = hist["Close"].pct_change().std() * np.sqrt(252)
-            vol = hist["Volume"].mean()
-            name = df_meta[df_meta["Symbol"] == s]["Name"].values[0]
-            sec = df_meta[df_meta["Symbol"] == s]["Sector"].values[0]
-            sent = get_sentiment_score(name)
-            data.append({"Ticker": s, "Name": name, "Return": r, "Volatility": v, "Volume": vol, "Sector": sec, "Sentiment": sent})
-        df = pd.DataFrame(data)
-        df["Score"] = df.apply(calculate_score, axis=1)
-        df_top = df.sort_values("Score", ascending=False).head(top_n)
-        df_top["Weight"] = round(1 / top_n, 3)
-        df_top["Signal"] = np.where(df_top["Score"] > 0.5, "Buy", "Hold")
-        st.success(T['done'])
-        st.dataframe(df_top)
-        st.subheader(T['distribution'])
-        st.bar_chart(df_top.set_index("Ticker")["Weight"])
-        st.subheader(T['sector_pie'])
-        fig1, ax1 = plt.subplots()
-        df_top["Sector"].value_counts().plot.pie(autopct='%1.1f%%', ax=ax1)
-        st.pyplot(fig1)
-        st.subheader(T['sentiment_chart'])
-        st.bar_chart(df_top.set_index("Ticker")["Sentiment"])
-        st.subheader(T['returns_hist'])
-        fig2, ax2 = plt.subplots()
-        ax2.hist(df_top["Return"], bins=8)
-        st.pyplot(fig2)
-        st.subheader(T['signals'])
-        st.table(df_top[["Ticker", "Signal"]])
+# --- כפתור המלץ לי תיק עכשיו ---
+if st.button(T['build_now']):
+    st.subheader("התיק האוטומטי שלך")
+    df_meta = load_ta125_static() if market == "ת\"א 125" else load_sp500_online()
+    symbols = validate_symbols(df_meta["Symbol"].tolist())
+    df = fetch_factors(symbols, df_meta)
+    df["Sentiment"] = df["Name"].apply(get_sentiment_score)
+    df["Score"] = df[["Return", "Volatility", "Volume", "Sentiment"]].apply(
+        lambda row: 0.4 * row["Return"] - 0.3 * row["Volatility"] + 0.2 * np.log(row["Volume"] + 1) + 0.1 * row["Sentiment"], axis=1)
+    df_top = run_prediction_model(df)
+    df_top["Weight"] = round(1 / top_n, 3)
+    st.dataframe(df_top)
+
+st.markdown("---")
+st.caption(T['footer'])
