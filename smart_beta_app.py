@@ -1,4 +1,4 @@
-# Smart-Beta AI Portfolio App - גרסה מעודכנת עם Reinforcement Learning
+# Smart-Beta AI Portfolio App - גרסה מעודכנת עם טעינת Google Trends
 
 import streamlit as st
 import pandas as pd
@@ -12,6 +12,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
+from pytrends.request import TrendReq
 import tempfile
 import os
 
@@ -107,32 +108,59 @@ def validate_symbols(symbols):
             continue
     return valid
 
-experience_buffer = []
+def get_sentiment_score(name):
+    pos = ["עלייה", "חיובי", "המלצה"]
+    neg = ["ירידה", "הפסד", "שלילי"]
+    try:
+        txt = requests.get(f"https://news.google.com/rss/search?q={name}").text
+        return sum(txt.count(k) for k in pos) - sum(txt.count(n) for n in neg)
+    except:
+        return 0
 
-def store_experience(features, reward):
-    experience_buffer.append((features, reward))
-    if len(experience_buffer) > 1000:
-        experience_buffer.pop(0)
+def get_trend_score(keyword):
+    try:
+        pytrends = TrendReq(hl='en-US', tz=360)
+        pytrends.build_payload([keyword], cat=0, timeframe='now 7-d')
+        data = pytrends.interest_over_time()
+        return int(data[keyword].mean()) if not data.empty else 0
+    except:
+        return 0
 
-def calculate_reward(portfolio_returns):
-    return np.mean(portfolio_returns) - np.std(portfolio_returns)
+def fetch_factors(symbols, df_meta):
+    data = []
+    for symbol in symbols:
+        try:
+            hist = get_ticker_data(symbol)
+            if hist.empty: continue
+            returns = (hist["Close"].iloc[-1] / hist["Close"].iloc[0]) - 1
+            vol = hist["Close"].pct_change().std() * np.sqrt(252)
+            volume = hist["Volume"].mean()
+            name = yf.Ticker(symbol).info.get("shortName", symbol)
+            sector = df_meta[df_meta["Symbol"] == symbol]["Sector"].values[0]
+            sentiment = get_sentiment_score(name)
+            trend = get_trend_score(name)
+            score = 0.35 * returns - 0.25 * vol + 0.15 * np.log(volume + 1) + 0.1 * sentiment + 0.15 * trend
+            data.append({
+                "Ticker": symbol,
+                "Name": name,
+                "Return": round(returns, 3),
+                "Volatility": round(vol, 3),
+                "Volume": int(volume),
+                "Sector": sector,
+                "Sentiment": sentiment,
+                "Trend": trend,
+                "Score": score
+            })
+        except:
+            continue
+    return pd.DataFrame(data)
 
-def update_factor_weights():
-    if not experience_buffer:
-        return [0.4, -0.3, 0.2, 0.1]
-    returns = np.array([reward for _, reward in experience_buffer])
-    factors = np.array([features for features, _ in experience_buffer])
-    avg_impact = np.mean(factors.T * returns, axis=1)
-    weights = avg_impact / np.sum(np.abs(avg_impact))
-    return weights
+# שאר הפונקציות (convert_df_to_excel, simulate_backtest, create_pdf_report וכו') יישארו זהים
+# יש להוסיף בחלק הדשבורד: גרף חדש להצגת Trend
 
-# המשך הקוד - היכן שמתבצע חישוב Score:
-# weights = update_factor_weights()
-# df["Score"] = df[["Return", "Volatility", "Volume", "Sentiment"]].apply(
-#     lambda row: weights[0]*row["Return"] + weights[1]*row["Volatility"] + weights[2]*np.log(row["Volume"]+1) + weights[3]*row["Sentiment"], axis=1)
+# בתוך בלוק הפעלת המודל אחרי df_top = ...
+# הוסף את השורה הבאה:
+st.subheader("Google Trends (Last 7 Days)")
+st.bar_chart(df_top.set_index("Ticker")["Trend"])
 
-# ובסיום הסימולציה:
-# reward = calculate_reward(df_back["Portfolio"].pct_change().dropna())
-# store_experience(df_top[["Return", "Volatility", "Volume", "Sentiment"]].mean().values, reward)
-
-# (שים לב לעדכן את כל הקריאות לקוד בהתאם!)
+# 👈 כעת המודל תומך גם בנתוני מגמות חיפוש בזמן אמת (Google Trends)
