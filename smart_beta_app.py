@@ -1,4 +1,4 @@
-# Smart-Beta AI Portfolio App - גרסה מעודכנת עם פרופיל משתמש אישי
+# Smart-Beta AI Portfolio App - גרסה מתקדמת עם ניהול היסטוריית תיקים והשוואת ביצועים
 
 import streamlit as st
 import pandas as pd
@@ -14,13 +14,13 @@ from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 import tempfile
 import os
+import uuid
+import json
 
 st.set_page_config(page_title="Smart-Beta AI Portfolio", layout="wide")
 
-# ⬇️ הוספת באנר גרפי בראש הדשבורד
 st.image("banner.png", use_container_width=True)
 
-# --- תרגום דו-לשוני ---
 translations = {
     'he': {
         'title': 'תיק השקעות חכם מבוסס AI',
@@ -42,12 +42,11 @@ translations = {
         'backtest': 'השוואה מול מדד ייחוס',
         'export_excel': 'הורד Excel',
         'export_pdf': 'הורד PDF',
-        'profile_title': 'הגדר את פרופיל ההשקעה שלך',
-        'risk_level': 'רמת סיכון מועדפת',
-        'preferred_market': 'שוק מועדף',
-        'preferred_sector': 'סקטור מועדף',
-        'recommend_me': 'המלץ לי תיק עכשיו',
-        'footer': 'דשבורד תיק השקעות חכם מבוסס AI - גרסה מלאה'
+        'footer': 'דשבורד תיק השקעות חכם מבוסס AI - גרסה מלאה',
+        'history': 'היסטוריית תיקים והשוואות',
+        'compare': 'השווה שני תיקים',
+        'select_portfolio_1': 'בחר תיק ראשון',
+        'select_portfolio_2': 'בחר תיק שני'
     },
     'en': {
         'title': 'AI-Powered Smart-Beta Portfolio',
@@ -69,12 +68,11 @@ translations = {
         'backtest': 'Backtest vs Benchmark',
         'export_excel': 'Download Excel',
         'export_pdf': 'Download PDF',
-        'profile_title': 'Set Your Investment Profile',
-        'risk_level': 'Preferred Risk Level',
-        'preferred_market': 'Preferred Market',
-        'preferred_sector': 'Preferred Sector',
-        'recommend_me': 'Recommend Portfolio Now',
-        'footer': 'Smart-Beta AI Portfolio Dashboard - Full Version'
+        'footer': 'Smart-Beta AI Portfolio Dashboard - Full Version',
+        'history': 'Portfolio History & Comparisons',
+        'compare': 'Compare Two Portfolios',
+        'select_portfolio_1': 'Select First Portfolio',
+        'select_portfolio_2': 'Select Second Portfolio'
     }
 }
 
@@ -84,23 +82,48 @@ T = translations[language]
 st.title(T['title'])
 st.markdown(T['subtitle'])
 
-# --- הגדרת פרופיל משתמש אישי ---
-st.sidebar.subheader(T['profile_title'])
-if 'profile' not in st.session_state:
-    st.session_state.profile = {
-        'risk': 'בינונית',
-        'market': 'S&P 500',
-        'sector': ''
+# כאן תוכל להכניס את קוד המודל הרגיל שלך כפי שהיה קודם...
+
+# ------------------- פונקציות חדשות -------------------
+
+def save_portfolio_to_file(df_top, stats, user_profile):
+    portfolio_id = str(uuid.uuid4())
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    data = {
+        "id": portfolio_id,
+        "timestamp": timestamp,
+        "profile": user_profile,
+        "stats": stats,
+        "portfolio": df_top.to_dict(orient="records")
     }
+    with open(f"history_{portfolio_id}.json", "w", encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+    return portfolio_id
 
-st.session_state.profile['risk'] = st.sidebar.selectbox(T['risk_level'], ['נמוכה', 'בינונית', 'גבוהה'])
-st.session_state.profile['market'] = st.sidebar.selectbox(T['preferred_market'], ['S&P 500', 'ת"א 125'])
-st.session_state.profile['sector'] = st.sidebar.text_input(T['preferred_sector'], '')
+def load_saved_portfolios():
+    files = [f for f in os.listdir('.') if f.startswith("history_") and f.endswith(".json")]
+    portfolios = []
+    for file in files:
+        with open(file, encoding='utf-8') as f:
+            portfolios.append(json.load(f))
+    return portfolios
 
-if st.sidebar.button(T['recommend_me']):
-    st.success(f"פרופיל נשמר: {st.session_state.profile}")
+def compare_two_portfolios(p1, p2):
+    df1 = pd.DataFrame(p1['portfolio'])
+    df2 = pd.DataFrame(p2['portfolio'])
+    st.subheader(f"{T['compare']}")
+    st.write(f"📅 {p1['timestamp']} vs {p2['timestamp']}")
+    st.dataframe(pd.concat([df1["Ticker"], df1[["Score", "Weight"]].add_suffix("_1"), df2[["Score", "Weight"]].add_suffix("_2")], axis=1))
 
-# המשך הקוד כאן... (ללא שינוי לקוד המודל)
+# ------------------- ממשק היסטוריה -------------------
 
-st.markdown("---")
-st.caption(T['footer'])
+if "💼 " + T['history'] in st.sidebar.radio("Menu", ["📊 " + T['run_model'], "💼 " + T['history']]):
+    portfolios = load_saved_portfolios()
+    if len(portfolios) >= 2:
+        p1 = st.selectbox(T['select_portfolio_1'], portfolios, format_func=lambda p: p['timestamp'])
+        p2 = st.selectbox(T['select_portfolio_2'], portfolios, format_func=lambda p: p['timestamp'])
+        compare_two_portfolios(p1, p2)
+    elif portfolios:
+        st.info("נשמר תיק אחד בלבד. השוואה תתאפשר לאחר שמירת תיק נוסף.")
+    else:
+        st.warning("אין תיקים שמורים. הרץ את המודל ושמור תיק.")
