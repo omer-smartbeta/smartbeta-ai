@@ -1,4 +1,4 @@
-# Smart-Beta AI Portfolio App - כולל מודול חיזוי חכם עם XGBoost
+# Smart-Beta AI Portfolio App - כולל מודול חיזוי חכם עם XGBoost ודשבורד מלא
 
 import streamlit as st
 import pandas as pd
@@ -22,7 +22,6 @@ st.set_page_config(page_title="Smart-Beta AI Portfolio", layout="wide")
 
 st.image("banner.png", use_container_width=True)
 
-# --- תרגום דו-לשוני ---
 translations = {
     'he': {
         'title': 'תיק השקעות חכם מבוסס AI',
@@ -113,14 +112,7 @@ def fetch_factors(symbols, df_meta):
             volume = hist["Volume"].mean()
             name = yf.Ticker(symbol).info.get("shortName", symbol)
             sector = df_meta[df_meta["Symbol"] == symbol]["Sector"].values[0]
-            data.append({
-                "Ticker": symbol,
-                "Name": name,
-                "Return": round(returns, 3),
-                "Volatility": round(vol, 3),
-                "Volume": int(volume),
-                "Sector": sector
-            })
+            data.append({"Ticker": symbol, "Name": name, "Return": round(returns, 3), "Volatility": round(vol, 3), "Volume": int(volume), "Sector": sector})
         except:
             continue
     return pd.DataFrame(data)
@@ -142,8 +134,11 @@ def run_predictive_model(df):
     st.dataframe(df[["Ticker", "Return", "Volatility", "Volume", "Prediction", "Signal"]], use_container_width=True)
 
 if st.button(T['run_predictive']):
-    with st.spinner("מריץ חיזוי חכם..."):
+    with st.spinner(T['loading']):
         df_meta = load_ta125_static() if market == "ת\"א 125" else load_sp500_online()
+        sector_filter = st.sidebar.selectbox(T['select_sector'], [""] + sorted(df_meta["Sector"].dropna().unique()))
+        if sector_filter:
+            df_meta = df_meta[df_meta["Sector"] == sector_filter]
         symbols = df_meta["Symbol"].tolist()[:top_n * 2]
         df = fetch_factors(symbols, df_meta)
         if df.empty:
