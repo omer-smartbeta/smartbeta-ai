@@ -8,3 +8,4 @@ xlsxwriter
 reportlab
 lxml
 scikit-learn
+xgboost
