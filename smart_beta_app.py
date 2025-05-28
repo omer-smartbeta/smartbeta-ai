@@ -1,4 +1,4 @@
-# Smart-Beta AI Portfolio App - כולל מודול חיזוי חכם עם XGBoost ו־דשבורד מלא
+# Smart-Beta AI Portfolio App - כולל מודול חיזוי חכם עם XGBoost
 
 import streamlit as st
 import pandas as pd
@@ -19,7 +19,6 @@ from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 
 st.set_page_config(page_title="Smart-Beta AI Portfolio", layout="wide")
-
 st.image("banner.png", use_container_width=True)
 
 # --- תרגום דו-לשוני ---
@@ -29,7 +28,6 @@ translations = {
         'subtitle': 'בחר שוק, סקטור ופרמטרים נוספים להרצת מודל תיק מניות חכם',
         'select_market': 'בחר שוק:',
         'select_sector': 'בחר סקטור (אופציונלי):',
-        'risk_level': 'בחר רמת סיכון:',
         'start_date': 'תאריך התחלה:',
         'end_date': 'תאריך סיום:',
         'num_stocks': 'כמה מניות לבחור?',
@@ -53,7 +51,6 @@ translations = {
         'subtitle': 'Choose market, sector and filters to run the AI-based portfolio model',
         'select_market': 'Select Market:',
         'select_sector': 'Filter by Sector (optional):',
-        'risk_level': 'Select Risk Level:',
         'start_date': 'Start Date:',
         'end_date': 'End Date:',
         'num_stocks': 'How many stocks to pick?',
@@ -81,7 +78,6 @@ st.title(T['title'])
 st.markdown(T['subtitle'])
 
 market = st.sidebar.selectbox(T['select_market'], ["S&P 500", "ת\"א 125"])
-risk_level = st.sidebar.selectbox(T['risk_level'], ["Low", "Medium", "High"])
 start_date = st.sidebar.date_input(T['start_date'], datetime.today() - timedelta(days=365))
 end_date = st.sidebar.date_input(T['end_date'], datetime.today())
 top_n = st.sidebar.slider(T['num_stocks'], 5, 30, 10)
@@ -126,43 +122,34 @@ def fetch_factors(symbols, df_meta):
             })
         except:
             continue
-    df = pd.DataFrame(data)
-    if risk_level == "Low":
-        df = df[df["Volatility"] < 0.25]
-    elif risk_level == "Medium":
-        df = df[(df["Volatility"] >= 0.25) & (df["Volatility"] <= 0.5)]
-    else:
-        df = df[df["Volatility"] > 0.5]
-    return df
+    return pd.DataFrame(data)
 
-if st.button(T['run_model']):
-    with st.spinner(T['loading']):
-        df_meta = load_ta125_static() if market == "ת\"א 125" else load_sp500_online()
-        df = fetch_factors(df_meta["Symbol"].tolist(), df_meta)
+def calculate_score(row):
+    return 0.4 * row["Return"] - 0.3 * row["Volatility"] + 0.2 * np.log(row["Volume"] + 1) + 0.1 * row.get("Sentiment", 0)
+
+def run_predictive_model(df):
+    st.subheader("📈 תוצאה ממודל חיזוי XGBoost")
+    df = df.copy()
+    df["LogVolume"] = np.log(df["Volume"] + 1)
+    df = df.dropna()
+    X = df[["Return", "Volatility", "LogVolume"]]
+    y = (df["Return"] > 0.1).astype(int)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
+    model = xgb.XGBClassifier(eval_metric="logloss")
+    model.fit(X_train, y_train)
+    df["Prediction"] = model.predict(X_scaled)
+    df["Signal"] = np.where(df["Prediction"] == 1, "Buy", "Hold")
+    st.dataframe(df[["Ticker", "Return", "Volatility", "Volume", "Prediction", "Signal"]], use_container_width=True)
+
+if st.button(T['run_predictive']):
+    with st.spinner("מריץ חיזוי חכם..."):
+        loaders = {"ת\"א 125": load_ta125_static, "S&P 500": load_sp500_online}
+        df_meta = loaders[market]()
+        symbols = df_meta["Symbol"].tolist()[:top_n * 2]
+        df = fetch_factors(symbols, df_meta)
         if df.empty:
             st.warning("⚠️ לא נמצאו נתונים. נסה לבחור שוק או סקטור אחר.")
             st.stop()
-        df_top = df.sort_values("Return", ascending=False).head(top_n)
-        df_top["Weight"] = round(1 / top_n, 3)
-        st.success(T['done'])
-        st.subheader(T['recommended'])
-        st.dataframe(df_top, use_container_width=True)
-
-        st.subheader(T['distribution'])
-        st.bar_chart(df_top.set_index("Ticker")["Weight"])
-
-        st.subheader(T['sector_pie'])
-        fig1, ax1 = plt.subplots()
-        df_top["Sector"].value_counts().plot.pie(autopct='%1.1f%%', ax=ax1)
-        ax1.set_ylabel("")
-        st.pyplot(fig1)
-
-        st.subheader(T['returns_hist'])
-        fig2, ax2 = plt.subplots()
-        ax2.hist(df_top["Return"], bins=8)
-        ax2.set_xlabel("Return")
-        st.pyplot(fig2)
-
-        st.subheader(T['signals'])
-        df_top["Signal"] = np.where(df_top["Return"] > 0.05, "Buy", "Hold")
-        st.table(df_top[["Ticker", "Signal"]])
+        run_predictive_model(df)
