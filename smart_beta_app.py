@@ -1,4 +1,4 @@
-# Smart-Beta AI Portfolio App - גרסה מעודכנת עם טעינת Google Trends
+# Smart-Beta AI Portfolio App - גרסה מעודכנת עם טעינה מ-Google Sheets וטיקרים תקינים בלבד
 
 import streamlit as st
 import pandas as pd
@@ -12,14 +12,15 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
-from pytrends.request import TrendReq
 import tempfile
 import os
 
 st.set_page_config(page_title="Smart-Beta AI Portfolio", layout="wide")
 
+# ⬇️ הוספת באנר גרפי בראש הדשבורד
 st.image("banner.png", use_container_width=True)
 
+# --- תרגום דו-לשוני ---
 translations = {
     'he': {
         'title': 'תיק השקעות חכם מבוסס AI',
@@ -108,24 +109,6 @@ def validate_symbols(symbols):
             continue
     return valid
 
-def get_sentiment_score(name):
-    pos = ["עלייה", "חיובי", "המלצה"]
-    neg = ["ירידה", "הפסד", "שלילי"]
-    try:
-        txt = requests.get(f"https://news.google.com/rss/search?q={name}").text
-        return sum(txt.count(k) for k in pos) - sum(txt.count(n) for n in neg)
-    except:
-        return 0
-
-def get_trend_score(keyword):
-    try:
-        pytrends = TrendReq(hl='en-US', tz=360)
-        pytrends.build_payload([keyword], cat=0, timeframe='now 7-d')
-        data = pytrends.interest_over_time()
-        return int(data[keyword].mean()) if not data.empty else 0
-    except:
-        return 0
-
 def fetch_factors(symbols, df_meta):
     data = []
     for symbol in symbols:
@@ -137,30 +120,35 @@ def fetch_factors(symbols, df_meta):
             volume = hist["Volume"].mean()
             name = yf.Ticker(symbol).info.get("shortName", symbol)
             sector = df_meta[df_meta["Symbol"] == symbol]["Sector"].values[0]
-            sentiment = get_sentiment_score(name)
-            trend = get_trend_score(name)
-            score = 0.35 * returns - 0.25 * vol + 0.15 * np.log(volume + 1) + 0.1 * sentiment + 0.15 * trend
             data.append({
                 "Ticker": symbol,
                 "Name": name,
                 "Return": round(returns, 3),
                 "Volatility": round(vol, 3),
                 "Volume": int(volume),
-                "Sector": sector,
-                "Sentiment": sentiment,
-                "Trend": trend,
-                "Score": score
+                "Sector": sector
             })
         except:
             continue
     return pd.DataFrame(data)
 
-# שאר הפונקציות (convert_df_to_excel, simulate_backtest, create_pdf_report וכו') יישארו זהים
-# יש להוסיף בחלק הדשבורד: גרף חדש להצגת Trend
+def get_combined_sentiment_score(name):
+    pos_words = ["עלייה", "חיובי", "המלצה", "bullish", "growth"]
+    neg_words = ["ירידה", "שלילי", "הפסד", "bearish", "decline"]
+    score = 0
+    try:
+        text = requests.get(f"https://news.google.com/rss/search?q={name}").text
+        score += sum(text.count(w) for w in pos_words) - sum(text.count(w) for w in neg_words)
+    except:
+        pass
+    try:
+        url = f"https://finance.yahoo.com/quote/{name}?p={name}"
+        html = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}).text
+        score += html.count("upgrade") + html.count("beat") - html.count("downgrade") - html.count("miss")
+    except:
+        pass
+    return score
 
-# בתוך בלוק הפעלת המודל אחרי df_top = ...
-# הוסף את השורה הבאה:
-st.subheader("Google Trends (Last 7 Days)")
-st.bar_chart(df_top.set_index("Ticker")["Trend"])
-
-# 👈 כעת המודל תומך גם בנתוני מגמות חיפוש בזמן אמת (Google Trends)
+# שאר הפונקציות (convert_df_to_excel, simulate_backtest, create_pdf_report...) נותרות ללא שינוי.
+# אל תשכח להחליף את קריאת הפונקציה לקו הבא:
+# df["Sentiment"] = df["Name"].apply(get_combined_sentiment_score)
