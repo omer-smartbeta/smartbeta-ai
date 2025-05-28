@@ -1,4 +1,4 @@
-# Smart-Beta AI Portfolio App - כולל מודול חיזוי חכם עם XGBoost
+# Smart-Beta AI Portfolio App - גרסה מותאמת עם ניהול זיכרון נכון וביצועים גבוהים
 
 import streamlit as st
 import pandas as pd
@@ -12,17 +12,17 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
-import tempfile
-import os
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 
+# הגדרת עמוד ראשי
 st.set_page_config(page_title="Smart-Beta AI Portfolio", layout="wide")
 
+# טעינת באנר ראשי
 st.image("banner.png", use_container_width=True)
 
-# --- תרגום דו-לשוני ---
+# תרגום דו-לשוני
 translations = {
     'he': {
         'title': 'תיק השקעות חכם מבוסס AI',
@@ -72,6 +72,7 @@ translations = {
     }
 }
 
+# הגדרת שפה
 language = st.sidebar.selectbox('בחר שפה / Select Language', ['he', 'en'])
 T = translations[language]
 
@@ -83,11 +84,11 @@ start_date = st.sidebar.date_input(T['start_date'], datetime.today() - timedelta
 end_date = st.sidebar.date_input(T['end_date'], datetime.today())
 top_n = st.sidebar.slider(T['num_stocks'], 5, 30, 10)
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_ta125_static():
     return pd.read_csv("TA125_valid.csv")
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def load_sp500_online(limit=100):
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     html = requests.get(url).text
@@ -96,18 +97,17 @@ def load_sp500_online(limit=100):
     return df.head(limit)
 
 @st.cache_data(show_spinner=False)
-def get_ticker_data_cached(symbol):
+def get_ticker_data(symbol):
     try:
         return yf.Ticker(symbol).history(period="6mo")
     except:
         return pd.DataFrame()
 
-
 def fetch_factors(symbols, df_meta):
     data = []
     for symbol in symbols:
         try:
-           hist = get_ticker_data_cached(symbol)
+            hist = get_ticker_data(symbol)
             if hist.empty: continue
             returns = (hist["Close"].iloc[-1] / hist["Close"].iloc[0]) - 1
             vol = hist["Close"].pct_change().std() * np.sqrt(252)
@@ -127,12 +127,12 @@ def fetch_factors(symbols, df_meta):
     return pd.DataFrame(data)
 
 def run_predictive_model(df):
-    st.subheader("\ud83d\udcc8 תוצאה ממודל חיזוי XGBoost")
+    st.subheader("\U0001F4C8 תוצאה ממודל חיזוי XGBoost")
     df = df.copy()
     df["LogVolume"] = np.log(df["Volume"] + 1)
     df = df.dropna()
     X = df[["Return", "Volatility", "LogVolume"]]
-    y = (df["Return"] > 0.1).astype(int)  # יעד לדוגמה: תשואה חיובית מעל 10%
+    y = (df["Return"] > 0.1).astype(int)
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
     X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
@@ -142,10 +142,16 @@ def run_predictive_model(df):
     df["Signal"] = np.where(df["Prediction"] == 1, "Buy", "Hold")
     st.dataframe(df[["Ticker", "Return", "Volatility", "Volume", "Prediction", "Signal"]], use_container_width=True)
 
+# כפתור הרצת מודל חיזוי
 if st.button(T['run_predictive']):
-    with st.spinner("מריץ חיזוי חכם..."):
+    with st.spinner(T['loading']):
         df_meta = load_ta125_static() if market == "ת\"א 125" else load_sp500_online()
-        symbols = df_meta["Symbol"].tolist()[:30]
+        symbols = df_meta["Symbol"].tolist()[:top_n * 2]
         df = fetch_factors(symbols, df_meta)
-        if not df.empty:
-            run_predictive_model(df)
+        if df.empty:
+            st.warning("\u26A0\ufe0f לא נמצאו נתונים. נסה לבחור שוק או סקטור אחר.")
+            st.stop()
+        run_predictive_model(df)
+
+st.markdown("---")
+st.caption(T['footer'])
