@@ -1,5 +1,4 @@
 # Full Smart-Beta AI Portfolio App with XGBoost + Feature Engineering
-# Your updated application code would be saved here.
 # Smart-Beta AI Portfolio App - גרסה מלאה כולל חיזוי, דשבורד, ניתוח סיכונים ותשואות
 
 import streamlit as st
@@ -36,6 +35,7 @@ translations = {
         'num_stocks': 'כמה מניות לבחור?',
         'run_model': 'הפעל מודל AI',
         'run_predictive': 'הפעל מודל חיזוי חכם',
+        'quick_recommend': 'בנה לי תיק עכשיו',
         'loading': 'מריץ את המודל...',
         'done': 'המודל סיים לרוץ!',
         'recommended': 'תיק מומלץ',
@@ -60,6 +60,7 @@ translations = {
         'num_stocks': 'How many stocks to pick?',
         'run_model': 'Run AI Model',
         'run_predictive': 'Run Predictive Model',
+        'quick_recommend': 'Build My Portfolio Now',
         'loading': 'Running the model...',
         'done': 'Model completed!',
         'recommended': 'Recommended Portfolio',
@@ -145,7 +146,6 @@ def run_predictive_model(df):
     df["Score"] = model.predict_proba(X_scaled)[:, 1]
     df["Signal"] = np.where(df["Prediction"] == 1, "Buy", "Hold")
 
-    # סינון לפי רמת סיכון
     if risk_level == "Low":
         df = df[df["Volatility"] < 0.2]
     elif risk_level == "High":
@@ -172,6 +172,15 @@ def run_predictive_model(df):
     ax2.set_ylabel("Return")
     st.pyplot(fig2)
 
+def quick_portfolio():
+    df_meta = load_ta125_static() if market == "ת\"א 125" else load_sp500_online()
+    symbols = df_meta["Symbol"].tolist()[:top_n * 2]
+    df = fetch_factors(symbols, df_meta)
+    if df.empty:
+        st.warning("⚠️ לא נמצאו נתונים. נסה לבחור שוק או סקטור אחר.")
+        st.stop()
+    run_predictive_model(df)
+
 if st.button(T['run_predictive']):
     with st.spinner(T['loading']):
         df_meta = load_ta125_static() if market == "ת\"א 125" else load_sp500_online()
@@ -186,6 +195,9 @@ if st.button(T['run_predictive']):
         else:
             run_predictive_model(df)
 
+if st.button(T['quick_recommend']):
+    with st.spinner(T['loading']):
+        quick_portfolio()
+
 st.markdown("---")
 st.caption(T['footer'])
-
