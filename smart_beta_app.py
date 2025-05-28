@@ -1,4 +1,4 @@
-# Smart-Beta AI Portfolio App - גרסה מותאמת עם ניהול זיכרון נכון וביצועים גבוהים
+# Smart-Beta AI Portfolio App - כולל מודול חיזוי חכם עם XGBoost
 
 import streamlit as st
 import pandas as pd
@@ -12,17 +12,17 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
+import tempfile
+import os
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 
-# הגדרת עמוד ראשי
 st.set_page_config(page_title="Smart-Beta AI Portfolio", layout="wide")
 
-# טעינת באנר ראשי
 st.image("banner.png", use_container_width=True)
 
-# תרגום דו-לשוני
+# --- תרגום דו-לשוני ---
 translations = {
     'he': {
         'title': 'תיק השקעות חכם מבוסס AI',
@@ -72,7 +72,6 @@ translations = {
     }
 }
 
-# הגדרת שפה
 language = st.sidebar.selectbox('בחר שפה / Select Language', ['he', 'en'])
 T = translations[language]
 
@@ -127,7 +126,7 @@ def fetch_factors(symbols, df_meta):
     return pd.DataFrame(data)
 
 def run_predictive_model(df):
-    st.subheader("\U0001F4C8 תוצאה ממודל חיזוי XGBoost")
+    st.subheader("📈 תוצאה ממודל חיזוי XGBoost")
     df = df.copy()
     df["LogVolume"] = np.log(df["Volume"] + 1)
     df = df.dropna()
@@ -142,14 +141,13 @@ def run_predictive_model(df):
     df["Signal"] = np.where(df["Prediction"] == 1, "Buy", "Hold")
     st.dataframe(df[["Ticker", "Return", "Volatility", "Volume", "Prediction", "Signal"]], use_container_width=True)
 
-# כפתור הרצת מודל חיזוי
 if st.button(T['run_predictive']):
-    with st.spinner(T['loading']):
+    with st.spinner("מריץ חיזוי חכם..."):
         df_meta = load_ta125_static() if market == "ת\"א 125" else load_sp500_online()
         symbols = df_meta["Symbol"].tolist()[:top_n * 2]
         df = fetch_factors(symbols, df_meta)
         if df.empty:
-            st.warning("\u26A0\ufe0f לא נמצאו נתונים. נסה לבחור שוק או סקטור אחר.")
+            st.warning("⚠️ לא נמצאו נתונים. נסה לבחור שוק או סקטור אחר.")
             st.stop()
         run_predictive_model(df)
 
